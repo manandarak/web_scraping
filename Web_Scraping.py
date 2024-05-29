@@ -1,83 +1,80 @@
 import requests
-from bs4 import BeautifulSoup
 import mysql.connector
-import logging
-from mysql.connector import errorcode
+from bs4 import BeautifulSoup
 
-# Function to scrape website
-def scrape_website(url):
-    try:
-        response = requests.get(url)
-        if response.status_code == 200:
-            return response.content
-        else:
-            logging.error(f"Failed to fetch content from {url}. Status code: {response.status_code}")
-            return None
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Error fetching content from {url}: {str(e)}")
-        return None
+# Function to spoof headers
+def spoof_headers():
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3'}
+    return headers
 
-# Function to extract data
-def extract_data(content):
-    if content:
-        soup = BeautifulSoup(content, 'html.parser')
-        # Example: extracting title
-        title = soup.find('title').text.strip()
-        return title
-    else:
-        return None
+# Function to handle logins & session data
+def handle_login_session():
+    session = requests.Session()
+    login_url = 'https://example.com/login'
+    payload = {'username': 'your_username', 'password': 'your_password'}
+    session.post(login_url, data=payload)
+    return session
 
-# Function to save data to MySQL database
-def save_to_database(data):
-    try:
-        cnx = mysql.connector.connect(user='root', password='Manan35635@',
-                                      host='localhost', database='web_scraping')
-        cursor = cnx.cursor()
+# Function to handle CSRF & hidden values
+def handle_csrf_hidden_values(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    csrf_token = soup.find('input', {'name': 'csrf_token'}).get('value')
+    hidden_values = {}
+    hidden_inputs = soup.find_all('input', type='hidden')
+    for input_tag in hidden_inputs:
+        hidden_values[input_tag.get('name')] = input_tag.get('value')
+    return csrf_token, hidden_values
 
-        # Create table if not exists
-        create_table_query = """
-            CREATE TABLE IF NOT EXISTS scraped_data (
-                id INT AUTO_INCREMENT PRIMARY KEY,
-                title VARCHAR(255)
-            )
-        """
-        cursor.execute(create_table_query)
+# Function to scrape and store hockey team stats
+def scrape_hockey_stats():
+    url = 'https://www.scrapethissite.com/pages/advanced/'
+    headers = spoof_headers()
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.content, 'html.parser')
+    data = soup.find_all('tr')[1:]  # Skip header row
+    for row in data:
+        columns = row.find_all('td')
+        team_name = columns[0].text.strip()
+        year = int(columns[1].text.strip())
+        wins = int(columns[2].text.strip())
+        losses = int(columns[3].text.strip())
+        ot_losses = int(columns[4].text.strip())
+        win_percentage = float(columns[5].text.strip())
+        goals_for = int(columns[6].text.strip())
+        goals_against = int(columns[7].text.strip())
+        plus_minus = int(columns[8].text.strip())
+        cursor.execute("INSERT INTO HockeyTeamStats VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)",
+                       (team_name, year, wins, losses, ot_losses, win_percentage, goals_for, goals_against, plus_minus))
+    conn.commit()
 
-        # Insert data into the table
-        insert_query = "INSERT INTO scraped_data (title) VALUES (%s)"
-        data_values = (data,)
-        cursor.execute(insert_query, data_values)
+# Function to scrape and store movie awards data
+def scrape_movie_awards():
+    url = 'https://www.scrapethissite.com/pages/ajax-javascript/#2015'
+    headers = spoof_headers()
+    response = requests.get(url, headers=headers)
+    data = response.json()
+    for movie in data:
+        cursor.execute("INSERT INTO MovieAwards VALUES (%s, %s, %s, %s)",
+                       (movie['Title'], movie['Nominations'], movie['Awards'], movie['Best Picture']))
+    conn.commit()
 
-        cnx.commit()
-        cursor.close()
-        cnx.close()
-        logging.info("Data saved to MySQL database successfully.")
-        print("Task completed successfully!")
-    except mysql.connector.Error as err:
-        if err.errno == errorcode.ER_ACCESS_DENIED_ERROR:
-            logging.error("Access denied error. Check username or password.")
-        elif err.errno == errorcode.ER_BAD_DB_ERROR:
-            logging.error("Database does not exist.")
-        else:
-            logging.error("Error saving data to MySQL database: {}".format(err))
+# Establish connection to MySQL
+conn = mysql.connector.connect(
+    host="localhost",
+    user="root",
+    password="Manan35635@",
+    database="assignment"
+)
+cursor = conn.cursor()
 
-# Main function
-def main():
-    logging.basicConfig(filename='scraping.log', level=logging.ERROR)
-    urls = ["https://www.scrapethissite.com/pages/ajax-javascript/#2015",
-            "https://www.scrapethissite.com/pages/forms/",
-            "https://www.scrapethissite.com/pages/advanced/"]
+# Scrape and store hockey team stats
+scrape_hockey_stats()
 
-    for url in urls:
-        content = scrape_website(url)
-        if content:
-            data = extract_data(content)
-            if data:
-                save_to_database(data)
-            else:
-                logging.error(f"No data extracted from {url}")
-        else:
-            logging.error(f"No content fetched from {url}")
+# Scrape and store movie awards data
+scrape_movie_awards()
 
-if __name__ == "__main__":
-    main()
+# Close cursor and connection
+cursor.close()
+conn.close()
